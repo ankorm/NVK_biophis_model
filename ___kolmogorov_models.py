@@ -4,6 +4,20 @@ import numpy as np
 import scipy
 import scipy.integrate
 
+def alpha_full(V, a_alpha, b_alpha):
+    u = a_alpha * V + b_alpha
+    # Чтобы избежать деления на 0 при u → 0
+    with np.errstate(divide='ignore', invalid='ignore'):
+        result = np.where(np.abs(u) < 1e-8, 1.0, u / (1 - np.exp(-u)))
+    return result
+
+def beta_full(V, a_beta, b_beta):
+    u = a_beta * V + b_beta
+    return np.exp(-u)
+
+def V_volt_clamp(t, V_0, V_1, t_0=10): 
+    return V_0 if t < t_0 else V_1
+
 def state_x2_solution(t, alpha, beta, P0):
     """
     Вычисляет аналитическое решение для вероятности открытого состояния P^2(t)
@@ -99,7 +113,8 @@ def state_x3_independ_ab_rph(t, y, V_func, alpha1_func, alpha2_func, beta1_func,
 
     return [dP2dt, dP3dt]
 
-def state_x3_depend_ab_rph(t, y, V_func, alpha_func, beta_func):
+def state_x3_depend_ab_rph(t, y, V_func, alpha_func=alpha_full, beta_func=beta_full,
+                           p_alpha=[0,0], p_beta=[0,0], V_0=-170, V_1=-10, t_0=10):
     """
     Правая часть ОДУ для трех состояний ворот с кратными интенсивностями:
         S1 ⇄ S2 ⇄ S3, с коэффициентами 3α, 2α, α и β, 2β, 3β
@@ -121,11 +136,12 @@ def state_x3_depend_ab_rph(t, y, V_func, alpha_func, beta_func):
         Производные [dP2/dt, dP3/dt]
     """
     P2, P3 = y
-    V = V_func(t)
+    V = V_func(t, V_0, V_1, t_0=t_0)
 
-    # Переходные коэффициенты
-    alpha = alpha_func(V)
-    beta = beta_func(V)
+    a_alpha, b_alpha = p_alpha[0], p_alpha[1]
+    a_beta, b_beta = p_beta[0], p_beta[1]
+    alpha = alpha_func(V, a_alpha, b_alpha)
+    beta = beta_func(V, a_beta, b_beta)
 
     # Уравнения
     dP2dt = 2 * alpha * (1 - P2 - P3) + 2 * beta * P3 + (-alpha - beta) * P2
@@ -133,5 +149,39 @@ def state_x3_depend_ab_rph(t, y, V_func, alpha_func, beta_func):
 
     return [dP2dt, dP3dt]
 
+def state_x4_depend_ab_rph(t, y, V_func, alpha_func=alpha_full, beta_func=beta_full,
+                           p_alpha=[0,0], p_beta=[0,0], V_0=-170, V_1=-10, t_0=10):
+    """
+    Правая часть системы ОДУ для модели с четырьмя состояниями ворот.
+    
+    Параметры:
+    ----------
+    t : float
+        Время
+    y : array-like
+        Вектор состояния [P2, P3, P4]
+    V_func : callable
+        Функция напряжения V(t)
+    a_alpha, b_alpha : float
+        Параметры функции α(V)
+    a_beta, b_beta : float
+        Параметры функции β(V)
+        
+    Возвращает:
+    -----------
+    dydt : list[float]
+        Производные [dP2/dt, dP3/dt, dP4/dt]
+    """
+    P2, P3, P4 = y
+    V = V_func(t, V_0, V_1, t_0=t_0)
+
+    alpha = alpha_func(V, p_alpha)
+    beta = beta_func(V, p_beta)
+
+    dP2dt = 3 * alpha * (1 - P2 - P3 - P4) + 2 * beta * P3 + (-2 * alpha - beta) * P2
+    dP3dt = 2 * alpha * P2 + 3 * beta * P4 + (-alpha - 2 * beta) * P3
+    dP4dt = alpha * P3 - 3 * beta * P4
+
+    return [dP2dt, dP3dt, dP4dt]
 
 
